@@ -27,9 +27,11 @@ def post_filter():
 
 def index(request):
     post_list = (
-        post_filter()
-        .order_by('-pub_date')
-        .annotate(comment_count=Count('comments'))
+        post_filter().order_by(
+            '-pub_date',
+        ).annotate(
+            comment_count=Count('comments'),
+        )
     )
     paginator = Paginator(post_list, COUNT_OF_POSTS)
     page_number = request.GET.get('page')
@@ -43,7 +45,7 @@ def index(request):
 def post_detail(request, id):
     post = get_object_or_404(
         post_filter(),
-        id=id
+        id=id,
     )
     context = {
         'post': post,
@@ -64,9 +66,11 @@ def category_posts(request, category_slug):
         category.posts.filter(
             is_published=True,
             pub_date__lt=datetime.now(),
+        ).order_by(
+            '-pub_date',
+        ).annotate(
+            comment_count=Count('comments'),
         )
-        .order_by('-pub_date')
-        .annotate(comment_count=Count('comments'))
     )
     paginator = Paginator(post_list, COUNT_OF_POSTS)
     page_number = request.GET.get('page')
@@ -89,11 +93,15 @@ def profile(request, username):
         User.objects.prefetch_related(
             Prefetch(
                 'posts',
-                queryset
-                .order_by('-pub_date')
-                .annotate(comment_count=Count('comments'))
+                queryset.order_by(
+                    '-pub_date',
+                ).annotate(
+                    comment_count=Count('comments'),
+                )
             ),
-        ).filter(username=username)
+        ).filter(
+            username=username,
+        )
     )
     post_list = user.posts.all()
     paginator = Paginator(post_list, COUNT_OF_POSTS)
@@ -137,15 +145,18 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         )
 
 
-class PostUpdateView(LoginRequiredMixin, UpdateView):
+class PostMixin:
     model = Post
-    form_class = PostForm
     template_name = 'blog/create.html'
 
     def dispatch(self, request, *args, **kwargs):
         if self.get_object().author != request.user:
             return redirect('blog:post_detail', id=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
+
+
+class PostUpdateView(PostMixin, LoginRequiredMixin, UpdateView):
+    form_class = PostForm
 
     def get_success_url(self):
         return reverse(
@@ -154,15 +165,8 @@ class PostUpdateView(LoginRequiredMixin, UpdateView):
         )
 
 
-class PostDeleteView(LoginRequiredMixin, DeleteView):
-    model = Post
-    template_name = 'blog/create.html'
+class PostDeleteView(PostMixin, LoginRequiredMixin, DeleteView):
     success_url = reverse_lazy('blog:index')
-
-    def dispatch(self, request, *args, **kwargs):
-        if self.get_object().author != request.user:
-            return redirect('blog:post_detail', id=kwargs['pk'])
-        return super().dispatch(request, *args, **kwargs)
 
 
 class CommentCreateView(LoginRequiredMixin, CreateView):
@@ -183,9 +187,8 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
         )
 
 
-class CommentUpdateView(LoginRequiredMixin, UpdateView):
+class CommentMixin:
     model = Comment
-    form_class = CommentForm
     template_name = 'blog/comment.html'
 
     def dispatch(self, request, *args, **kwargs):
@@ -193,6 +196,10 @@ class CommentUpdateView(LoginRequiredMixin, UpdateView):
         if comment.author != request.user:
             return redirect('blog:post_detail', comment.post_id)
         return super().dispatch(request, *args, **kwargs)
+
+
+class CommentUpdateView(CommentMixin, LoginRequiredMixin, UpdateView):
+    form_class = CommentForm
 
     def get_success_url(self):
         return reverse(
@@ -201,13 +208,5 @@ class CommentUpdateView(LoginRequiredMixin, UpdateView):
         )
 
 
-class CommentDeleteView(LoginRequiredMixin, DeleteView):
-    model = Comment
-    template_name = 'blog/comment.html'
+class CommentDeleteView(CommentMixin, LoginRequiredMixin, DeleteView):
     success_url = reverse_lazy('blog:index')
-
-    def dispatch(self, request, *args, **kwargs):
-        comment = get_object_or_404(Comment, pk=kwargs['pk'])
-        if comment.author != request.user:
-            return redirect('blog:post_detail', comment.post_id)
-        return super().dispatch(request, *args, **kwargs)
